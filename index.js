@@ -1,7 +1,5 @@
 const express = require("express");
 const axios = require("axios");
-const csv = require("csv-parser");
-const { Readable } = require("stream");
 
 const app = express();
 app.use(express.json());
@@ -12,6 +10,15 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 let sesiones = {};
 
 /* =========================
+   PARSER CSV ROBUSTO (SIN LIBRERÍAS)
+========================= */
+function parseCSVLine(line) {
+  const regex = /(".*?"|[^",]+)(?=\s*,|\s*$)/g;
+  const matches = line.match(regex);
+  return matches ? matches.map(m => m.replace(/^"|"$/g, "").trim()) : [];
+}
+
+/* =========================
    LEER GOOGLE SHEETS
 ========================= */
 async function obtenerPrecios() {
@@ -19,25 +26,30 @@ async function obtenerPrecios() {
     const url = "https://docs.google.com/spreadsheets/d/1PiA-jCNr4hUQJE1jO_FZ-xh0gg_sPSw2-qHCf9_a-h8/export?format=csv";
     const response = await axios.get(url);
 
+    const lineas = response.data.split("\n");
     const resultados = [];
 
-    return new Promise((resolve, reject) => {
-      const stream = Readable.from(response.data);
+    const encabezados = parseCSVLine(lineas[0]);
 
-      stream
-        .pipe(csv())
-        .on("data", (data) => {
-          resultados.push({
-            codigo: data.CODIGO?.trim(),
-            tipo: data.TIPO?.trim(),
-            modelo: data.MODELO?.trim(),
-            colores: data.COLORES?.trim(),
-            precio_m2: parseFloat(data.PRECIO_M2)
-          });
-        })
-        .on("end", () => resolve(resultados))
-        .on("error", (error) => reject(error));
-    });
+    for (let i = 1; i < lineas.length; i++) {
+      const columnas = parseCSVLine(lineas[i]);
+      if (columnas.length === encabezados.length) {
+        let fila = {};
+        encabezados.forEach((enc, index) => {
+          fila[enc.trim()] = columnas[index];
+        });
+
+        resultados.push({
+          codigo: fila["CODIGO"]?.trim(),
+          tipo: fila["TIPO"]?.trim(),
+          modelo: fila["MODELO"]?.trim(),
+          colores: fila["COLORES"]?.trim(),
+          precio_m2: parseFloat(fila["PRECIO_M2"])
+        });
+      }
+    }
+
+    return resultados;
 
   } catch (error) {
     console.error("Error leyendo hoja:", error);
@@ -113,7 +125,6 @@ app.post("/webhook", async (req, res) => {
 
               sesiones[senderId] = {
                 paso: "modelo",
-                categoria: mensaje,
                 modelos: filtrados
               };
 
