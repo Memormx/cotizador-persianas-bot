@@ -1,7 +1,5 @@
 const express = require("express");
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
 
 const app = express();
 app.use(express.json());
@@ -9,166 +7,237 @@ app.use(express.json());
 const VERIFY_TOKEN = "verificacion123";
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-const CSV_FILE = path.join(__dirname, "BASE_PRECIOS_PERSIANAS_2026.csv");
+/* =========================
+   BASE DE DATOS INTERNA
+=========================*/
 
-// ====== MEMORIA SIMPLE DE USUARIOS ======
-const userState = {};
+const catalogo = {
+  "1": { // SHEER
+    nombre: "SHEER",
+    modelos: [
+      { nombre: "FRESH TRAS 2.7", precio: 700, max: 2.7 },
+      { nombre: "TURQUESA TRAS 2.7", precio: 784, max: 2.7 },
+      { nombre: "NATURE S TRAS 2.7", precio: 924, max: 2.7 },
+      { nombre: "TEXTURY S TRAS 2.7", precio: 1078, max: 2.7 },
+      { nombre: "RUBI TRAS 2.7", precio: 1078, max: 2.7 },
+      { nombre: "SHEER SCREEN TRAS 2.7", precio: 1722, max: 2.7 },
+      { nombre: "BAHUNIA TRAS 2.7", precio: 1722, max: 2.7 },
+      { nombre: "NATURE B/O 2.7", precio: 1120, max: 2.7 },
+      { nombre: "TOLEDO B/O 2.7", precio: 1176, max: 2.7 },
+      { nombre: "URBAN D/M 2.7", precio: 1176, max: 2.7 }
+    ]
+  },
 
-// ====== LEER CSV ======
-function getData() {
-  try {
-    if (!fs.existsSync(CSV_FILE)) {
-      console.log("Archivo no encontrado");
-      return [];
-    }
+  "2": { // ENROLLABLE
+    nombre: "ENROLLABLE",
+    modelos: [
+      { nombre: "LINEN TRAS 2.1", precio: 490, max: 2.1 },
+      { nombre: "VALLEY TRAS 2.4", precio: 490, max: 2.4 },
+      { nombre: "TANIA TRAS 2.1", precio: 490, max: 2.1 },
+      { nombre: "SCREEN 250 TRAS 2.5", precio: 490, max: 2.5 },
+      { nombre: "SCREEN 450 TRAS 2.5", precio: 490, max: 2.5 },
+      { nombre: "FERRARA TRAS 2.4", precio: 560, max: 2.4 },
+      { nombre: "ASPEN TRAS 3", precio: 560, max: 3 },
+      { nombre: "MONTREAL TRAS 2.5", precio: 560, max: 2.5 },
+      { nombre: "LINEN B/O 2.8", precio: 630, max: 2.8 },
+      { nombre: "BRAHAMS B/O 2.5", precio: 630, max: 2.5 },
+      { nombre: "TANIA B/O 2.2", precio: 630, max: 2.2 },
+      { nombre: "BRAMPTON B/O 3", precio: 910, max: 3 },
+      { nombre: "DINASY B/O 3", precio: 910, max: 3 },
+      { nombre: "ASPEN B/O 3", precio: 910, max: 3 },
+      { nombre: "FERRARA B/O 2.5", precio: 910, max: 2.5 },
+      { nombre: "VICTORIA B/O 3", precio: 910, max: 3 },
+      { nombre: "MONTREAL B/O 2.5", precio: 910, max: 2.5 }
+    ]
+  },
 
-    let file = fs.readFileSync(CSV_FILE, "utf8").replace(/^\uFEFF/, "");
-    const lines = file.split(/\r?\n/).filter(l => l.trim() !== "");
-
-    const separator = lines[0].includes(";") ? ";" : ",";
-    const rows = lines.slice(1);
-
-    return rows.map(r => {
-      const c = r.split(separator);
-      return {
-        categoria: c[0]?.trim(),
-        modelo: c[1]?.trim(),
-        colores: c[2]?.trim(),
-        precio: c[3]?.trim()
-      };
-    }).filter(x => x.categoria && x.modelo);
-
-  } catch (e) {
-    console.log("Error leyendo CSV:", e.message);
-    return [];
+  "3": { // PANEL JAPONES
+    nombre: "PANEL JAPONES",
+    modelos: [
+      { nombre: "LINEN TRAS 2.1", precio: 1400, max: 2.1 },
+      { nombre: "TANIA TRAS 2.1", precio: 1400, max: 2.1 },
+      { nombre: "SCREEN 250 TRAS 2.5", precio: 1400, max: 2.5 },
+      { nombre: "SCREEN 450 TRAS 2.5", precio: 1400, max: 2.5 },
+      { nombre: "FERRARA TRAS 2.4", precio: 1610, max: 2.4 },
+      { nombre: "ASPEN TRAS 3", precio: 1610, max: 3 },
+      { nombre: "MONTREAL TRAS 2.5", precio: 1610, max: 2.5 },
+      { nombre: "LINEN B/O 2.8", precio: 1610, max: 2.8 },
+      { nombre: "BRAHAMS B/O 2.5", precio: 1610, max: 2.5 },
+      { nombre: "TANIA B/O 2.2", precio: 1610, max: 2.2 },
+      { nombre: "BRAMPTON B/O 3", precio: 1820, max: 3 },
+      { nombre: "DINASY B/O 3", precio: 1820, max: 3 },
+      { nombre: "ASPEN B/O 3", precio: 1820, max: 3 },
+      { nombre: "FERRARA B/O 2.5", precio: 1820, max: 2.5 },
+      { nombre: "VICTORIA B/O 3", precio: 1820, max: 3 },
+      { nombre: "MONTREAL B/O 2.5", precio: 1820, max: 2.5 }
+    ]
   }
-}
+};
 
-// ====== MENU ======
-function mainMenu() {
+/* =========================
+   CONTROL DE ESTADO
+=========================*/
+
+const estadoUsuario = {};
+
+function menuPrincipal() {
   return `MENÚ PRINCIPAL
 
 1 - Sheer
-2 - Panel Japonés
-3 - Enrollable
+2 - Enrollable
+3 - Panel Japonés
 
 0 - Volver al menú`;
 }
 
-// ====== WEBHOOK GET ======
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+/* =========================
+   WEBHOOK
+=========================*/
 
-  if (mode && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
+app.get("/webhook", (req, res) => {
+  if (
+    req.query["hub.mode"] &&
+    req.query["hub.verify_token"] === VERIFY_TOKEN
+  ) {
+    return res.status(200).send(req.query["hub.challenge"]);
   }
   return res.sendStatus(403);
 });
 
-// ====== WEBHOOK POST ======
 app.post("/webhook", (req, res) => {
-
-  // RESPONDER INMEDIATO (evita loop de facebook)
   res.status(200).send("EVENT_RECEIVED");
 
   const body = req.body;
-
   if (body.object !== "page") return;
 
   body.entry.forEach(entry => {
     entry.messaging.forEach(event => {
-
       if (!event.message || !event.message.text) return;
 
-      const senderId = event.sender.id;
-      const text = event.message.text.trim();
-
-      handleMessage(senderId, text);
-
+      manejarMensaje(event.sender.id, event.message.text.trim());
     });
   });
 });
 
-// ====== LOGICA PRINCIPAL ======
-async function handleMessage(senderId, text) {
+/* =========================
+   LOGICA PRINCIPAL
+=========================*/
 
-  if (!userState[senderId]) {
-    userState[senderId] = { step: "menu" };
+async function manejarMensaje(user, texto) {
+
+  if (!estadoUsuario[user]) {
+    estadoUsuario[user] = { paso: "menu" };
   }
 
-  const data = getData();
+  const estado = estadoUsuario[user];
 
-  if (text === "0") {
-    userState[senderId] = { step: "menu" };
-    return sendMessage(senderId, mainMenu());
+  if (texto === "0") {
+    estadoUsuario[user] = { paso: "menu" };
+    return enviar(user, menuPrincipal());
   }
 
-  if (userState[senderId].step === "menu") {
+  // PASO MENU PRINCIPAL
+  if (estado.paso === "menu") {
 
-    if (!["1","2","3"].includes(text)) {
-      return sendMessage(senderId, mainMenu());
+    if (!catalogo[texto]) {
+      return enviar(user, menuPrincipal());
     }
 
-    const modelos = data.filter(d => d.categoria === text);
+    const categoria = catalogo[texto];
+    estadoUsuario[user] = { paso: "modelo", categoria: texto };
 
-    if (modelos.length === 0) {
-      return sendMessage(senderId, "No hay modelos disponibles.");
-    }
-
-    userState[senderId] = {
-      step: "modelos",
-      categoria: text,
-      modelos: modelos
-    };
-
-    let respuesta = "MODELOS:\n";
-    modelos.forEach((m, i) => {
-      respuesta += `${i+1} - ${m.modelo}\n`;
+    let respuesta = `${categoria.nombre}\n\n`;
+    categoria.modelos.forEach((m, i) => {
+      respuesta += `${i + 1} - ${m.nombre} ($${m.precio} m²)\n`;
     });
 
-    return sendMessage(senderId, respuesta);
+    respuesta += `\n0 - Volver`;
+    return enviar(user, respuesta);
   }
 
-  if (userState[senderId].step === "modelos") {
+  // SELECCION MODELO
+  if (estado.paso === "modelo") {
 
-    const index = parseInt(text) - 1;
-    const modelos = userState[senderId].modelos;
+    const categoria = catalogo[estado.categoria];
+    const index = parseInt(texto) - 1;
 
-    if (isNaN(index) || !modelos[index]) {
-      return sendMessage(senderId, "Modelo inválido.");
+    if (!categoria.modelos[index]) {
+      return enviar(user, "Modelo inválido");
     }
 
-    const modelo = modelos[index];
+    estadoUsuario[user] = {
+      paso: "ancho",
+      modelo: categoria.modelos[index]
+    };
 
-    userState[senderId] = { step: "menu" };
+    return enviar(user, `Ingresa el ANCHO en metros (máximo ${categoria.modelos[index].max})`);
+  }
 
-    return sendMessage(
-      senderId,
-      `Modelo: ${modelo.modelo}
-Colores: ${modelo.colores}
-Precio: ${modelo.precio}`
+  // INGRESA ANCHO
+  if (estado.paso === "ancho") {
+
+    const ancho = parseFloat(texto);
+
+    if (isNaN(ancho) || ancho > estado.modelo.max) {
+      return enviar(user, `Ancho inválido. Máximo permitido ${estado.modelo.max}`);
+    }
+
+    estadoUsuario[user] = {
+      paso: "alto",
+      modelo: estado.modelo,
+      ancho: ancho
+    };
+
+    return enviar(user, "Ingresa el ALTO en metros");
+  }
+
+  // INGRESA ALTO
+  if (estado.paso === "alto") {
+
+    const alto = parseFloat(texto);
+
+    if (isNaN(alto)) {
+      return enviar(user, "Alto inválido");
+    }
+
+    let area = estado.ancho * alto;
+    if (area < 1) area = 1;
+
+    const total = Math.round(area * estado.modelo.precio);
+
+    estadoUsuario[user] = { paso: "menu" };
+
+    return enviar(user,
+`COTIZACIÓN
+
+Modelo: ${estado.modelo.nombre}
+Ancho: ${estado.ancho} m
+Alto: ${alto} m
+Área cobrada: ${area} m²
+Precio m²: $${estado.modelo.precio}
+TOTAL: $${total} MXN
+
+Escribe cualquier número para nueva cotización`
     );
   }
 }
 
-// ====== ENVIAR MENSAJE ======
-async function sendMessage(senderId, text) {
+/* =========================
+   ENVIO MENSAJE
+=========================*/
+
+async function enviar(user, texto) {
   try {
     await axios.post(
       `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       {
-        recipient: { id: senderId },
-        message: { text: text }
+        recipient: { id: user },
+        message: { text: texto }
       }
     );
   } catch (error) {
-    console.log("Error enviando mensaje:", error.response?.data || error.message);
+    console.log("Error:", error.response?.data || error.message);
   }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Servidor estable en puerto", PORT);
-});
+app.listen(process.env.PORT || 3000);
