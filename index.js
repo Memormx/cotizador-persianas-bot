@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
@@ -7,16 +8,15 @@ app.use(express.json());
 const VERIFY_TOKEN = "verificacion123";
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-// ⚠️ PON AQUI TU LINK CSV PUBLICO
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/TU_ID/export?format=csv";
+const CSV_FILE = "./BASE_PRECIOS_PERSIANAS_2026.csv";
 
-// ====== FUNCION PARA LEER GOOGLE SHEET ======
-async function getSheetData() {
+// ====== LEER ARCHIVO LOCAL ======
+function getSheetData() {
   try {
-    const response = await axios.get(SHEET_URL);
-    const rows = response.data.split("\n");
+    const file = fs.readFileSync(CSV_FILE, "utf8");
+    const rows = file.split("\n").slice(1); // ignora encabezado
 
-    return rows.slice(1) // ignora encabezado
+    return rows
       .map(row => row.split(","))
       .filter(row => row.length >= 4)
       .map(row => ({
@@ -26,7 +26,7 @@ async function getSheetData() {
         precio: row[3]?.trim()
       }));
   } catch (error) {
-    console.log("Error leyendo sheet:", error.message);
+    console.log("Error leyendo archivo:", error.message);
     return [];
   }
 }
@@ -35,16 +35,18 @@ async function getSheetData() {
 function mainMenu() {
   return `
 📌 MENÚ PRINCIPAL
+
 1️⃣ Sheer
 2️⃣ Panel Japonés
 3️⃣ Enrollable
 
 0️⃣ Volver al menú
+
 Escribe el número:
 `;
 }
 
-// ====== WEBHOOK ======
+// ====== WEBHOOK GET ======
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -57,6 +59,7 @@ app.get("/webhook", (req, res) => {
   }
 });
 
+// ====== WEBHOOK POST ======
 app.post("/webhook", async (req, res) => {
   const body = req.body;
 
@@ -74,8 +77,8 @@ app.post("/webhook", async (req, res) => {
           }
 
           if (["1","2","3"].includes(text)) {
-            const data = await getSheetData();
 
+            const data = getSheetData();
             const modelos = data.filter(item => item.categoria === text);
 
             if (modelos.length === 0) {
@@ -91,7 +94,6 @@ app.post("/webhook", async (req, res) => {
 
             respuesta += "\nEscribe el número del modelo para ver colores.";
             await sendMessage(senderId, respuesta);
-
             return;
           }
 
@@ -107,13 +109,17 @@ app.post("/webhook", async (req, res) => {
 
 // ====== ENVIAR MENSAJE ======
 async function sendMessage(senderId, text) {
-  await axios.post(
-    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: senderId },
-      message: { text: text }
-    }
-  );
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: senderId },
+        message: { text: text }
+      }
+    );
+  } catch (error) {
+    console.log("Error enviando mensaje:", error.response?.data || error.message);
+  }
 }
 
 const PORT = process.env.PORT || 3000;
