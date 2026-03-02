@@ -12,7 +12,7 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 let sesiones = {};
 
 /* =========================
-   LEER GOOGLE SHEETS CORRECTAMENTE
+   LEER GOOGLE SHEETS
 ========================= */
 async function obtenerPrecios() {
   try {
@@ -28,6 +28,7 @@ async function obtenerPrecios() {
         .pipe(csv())
         .on("data", (data) => {
           resultados.push({
+            codigo: data.CODIGO?.trim(),
             tipo: data.TIPO?.trim(),
             modelo: data.MODELO?.trim(),
             colores: data.COLORES?.trim(),
@@ -100,24 +101,24 @@ app.post("/webhook", async (req, res) => {
 
           if (sesiones[senderId].paso === "menu") {
 
-            if (mensaje === "1") {
-              const datos = await obtenerPrecios();
-              const sheer = datos.filter(d =>
-                d.tipo?.toLowerCase() === "sheer"
-              );
+            if (["1", "2", "3"].includes(mensaje)) {
 
-              if (sheer.length === 0) {
-                await sendMessage(senderId, "No hay modelos SHEER disponibles.");
+              const datos = await obtenerPrecios();
+              const filtrados = datos.filter(d => d.codigo === mensaje);
+
+              if (filtrados.length === 0) {
+                await sendMessage(senderId, "No hay modelos disponibles para esta categoría.");
                 continue;
               }
 
               sesiones[senderId] = {
-                paso: "sheer_modelo",
-                modelos: sheer
+                paso: "modelo",
+                categoria: mensaje,
+                modelos: filtrados
               };
 
-              let respuesta = "Modelos SHEER disponibles:\n\n";
-              sheer.forEach((m, index) => {
+              let respuesta = "Modelos disponibles:\n\n";
+              filtrados.forEach((m, index) => {
                 respuesta += `${index + 1}️⃣ ${m.modelo}\n`;
               });
 
@@ -126,41 +127,28 @@ app.post("/webhook", async (req, res) => {
               await sendMessage(senderId, respuesta);
             }
 
-            else if (mensaje === "2") {
-              await sendMessage(senderId, "Panel Japonés próximamente disponible.\n\n0️⃣ Volver al menú");
-            }
-
-            else if (mensaje === "3") {
-              await sendMessage(senderId, "Enrollables próximamente disponible.\n\n0️⃣ Volver al menú");
-            }
-
             else {
               await sendMessage(senderId, menuPrincipal());
             }
           }
 
-          else if (sesiones[senderId].paso === "sheer_modelo") {
+          else if (sesiones[senderId].paso === "modelo") {
 
             const index = parseInt(mensaje) - 1;
             const modelos = sesiones[senderId].modelos;
 
             if (!isNaN(index) && modelos[index]) {
 
-              const modeloSeleccionado = modelos[index];
-
-              sesiones[senderId] = {
-                paso: "sheer_color",
-                modelo: modeloSeleccionado
-              };
+              const seleccionado = modelos[index];
 
               await sendMessage(
                 senderId,
-                `Modelo: ${modeloSeleccionado.modelo}
+                `Modelo: ${seleccionado.modelo}
 
 Colores disponibles:
-${modeloSeleccionado.colores}
+${seleccionado.colores}
 
-Precio: $${modeloSeleccionado.precio_m2} por m2
+Precio: $${seleccionado.precio_m2} por m2
 
 0️⃣ Volver al menú`
               );
