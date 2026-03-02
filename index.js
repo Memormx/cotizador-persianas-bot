@@ -7,74 +7,44 @@ app.use(express.json());
 const VERIFY_TOKEN = "verificacion123";
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-let sesiones = {};
+// ⚠️ PON AQUI TU LINK CSV PUBLICO
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/TU_ID/export?format=csv";
 
-/* =========================
-   PARSER CSV ROBUSTO (SIN LIBRERÍAS)
-========================= */
-function parseCSVLine(line) {
-  const regex = /(".*?"|[^",]+)(?=\s*,|\s*$)/g;
-  const matches = line.match(regex);
-  return matches ? matches.map(m => m.replace(/^"|"$/g, "").trim()) : [];
-}
-
-/* =========================
-   LEER GOOGLE SHEETS
-========================= */
-async function obtenerPrecios() {
+// ====== FUNCION PARA LEER GOOGLE SHEET ======
+async function getSheetData() {
   try {
-    const url = "https://docs.google.com/spreadsheets/d/1PiA-jCNr4hUQJE1jO_FZ-xh0gg_sPSw2-qHCf9_a-h8/export?format=csv";
-    const response = await axios.get(url);
+    const response = await axios.get(SHEET_URL);
+    const rows = response.data.split("\n");
 
-    const lineas = response.data.split("\n");
-    const resultados = [];
-
-    const encabezados = parseCSVLine(lineas[0]);
-
-    for (let i = 1; i < lineas.length; i++) {
-      const columnas = parseCSVLine(lineas[i]);
-      if (columnas.length === encabezados.length) {
-        let fila = {};
-        encabezados.forEach((enc, index) => {
-          fila[enc.trim()] = columnas[index];
-        });
-
-        resultados.push({
-          codigo: fila["CODIGO"]?.trim(),
-          tipo: fila["TIPO"]?.trim(),
-          modelo: fila["MODELO"]?.trim(),
-          colores: fila["COLORES"]?.trim(),
-          precio_m2: parseFloat(fila["PRECIO_M2"])
-        });
-      }
-    }
-
-    return resultados;
-
+    return rows.slice(1) // ignora encabezado
+      .map(row => row.split(","))
+      .filter(row => row.length >= 4)
+      .map(row => ({
+        categoria: row[0]?.trim(),
+        modelo: row[1]?.trim(),
+        colores: row[2]?.trim(),
+        precio: row[3]?.trim()
+      }));
   } catch (error) {
-    console.error("Error leyendo hoja:", error);
+    console.log("Error leyendo sheet:", error.message);
     return [];
   }
 }
 
-/* =========================
-   MENÚ PRINCIPAL
-========================= */
-function menuPrincipal() {
+// ====== MENU PRINCIPAL ======
+function mainMenu() {
   return `
-Bienvenido al Cotizador de Persianas
-
+📌 MENÚ PRINCIPAL
 1️⃣ Sheer
 2️⃣ Panel Japonés
 3️⃣ Enrollable
 
-0️⃣ Volver a este menú
+0️⃣ Volver al menú
+Escribe el número:
 `;
 }
 
-/* =========================
-   WEBHOOK VERIFICACIÓN
-========================= */
+// ====== WEBHOOK ======
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -87,87 +57,45 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-/* =========================
-   WEBHOOK MENSAJES
-========================= */
 app.post("/webhook", async (req, res) => {
   const body = req.body;
 
   if (body.object === "page") {
     for (const entry of body.entry) {
       for (const event of entry.messaging) {
-        if (event.message) {
+        if (event.message && event.message.text) {
 
           const senderId = event.sender.id;
-          const mensaje = event.message.text?.trim();
+          const text = event.message.text.trim();
 
-          if (!sesiones[senderId]) {
-            sesiones[senderId] = { paso: "menu" };
+          if (text === "0") {
+            await sendMessage(senderId, mainMenu());
+            return;
           }
 
-          if (mensaje === "0") {
-            sesiones[senderId] = { paso: "menu" };
-            await sendMessage(senderId, menuPrincipal());
-            continue;
-          }
+          if (["1","2","3"].includes(text)) {
+            const data = await getSheetData();
 
-          if (sesiones[senderId].paso === "menu") {
+            const modelos = data.filter(item => item.categoria === text);
 
-            if (["1", "2", "3"].includes(mensaje)) {
-
-              const datos = await obtenerPrecios();
-              const filtrados = datos.filter(d => d.codigo === mensaje);
-
-              if (filtrados.length === 0) {
-                await sendMessage(senderId, "No hay modelos disponibles para esta categoría.");
-                continue;
-              }
-
-              sesiones[senderId] = {
-                paso: "modelo",
-                modelos: filtrados
-              };
-
-              let respuesta = "Modelos disponibles:\n\n";
-              filtrados.forEach((m, index) => {
-                respuesta += `${index + 1}️⃣ ${m.modelo}\n`;
-              });
-
-              respuesta += "\n0️⃣ Volver al menú";
-
-              await sendMessage(senderId, respuesta);
+            if (modelos.length === 0) {
+              await sendMessage(senderId, "❌ No hay modelos disponibles en esta categoría.");
+              return;
             }
 
-            else {
-              await sendMessage(senderId, menuPrincipal());
-            }
+            let respuesta = "📌 MODELOS DISPONIBLES:\n\n";
+
+            modelos.forEach((item, index) => {
+              respuesta += `${index + 1}. ${item.modelo}\n`;
+            });
+
+            respuesta += "\nEscribe el número del modelo para ver colores.";
+            await sendMessage(senderId, respuesta);
+
+            return;
           }
 
-          else if (sesiones[senderId].paso === "modelo") {
-
-            const index = parseInt(mensaje) - 1;
-            const modelos = sesiones[senderId].modelos;
-
-            if (!isNaN(index) && modelos[index]) {
-
-              const seleccionado = modelos[index];
-
-              await sendMessage(
-                senderId,
-                `Modelo: ${seleccionado.modelo}
-
-Colores disponibles:
-${seleccionado.colores}
-
-Precio: $${seleccionado.precio_m2} por m2
-
-0️⃣ Volver al menú`
-              );
-
-            } else {
-              await sendMessage(senderId, "Selecciona un número válido.\n0️⃣ Volver al menú");
-            }
-          }
+          await sendMessage(senderId, mainMenu());
         }
       }
     }
@@ -177,9 +105,7 @@ Precio: $${seleccionado.precio_m2} por m2
   }
 });
 
-/* =========================
-   ENVIAR MENSAJE
-========================= */
+// ====== ENVIAR MENSAJE ======
 async function sendMessage(senderId, text) {
   await axios.post(
     `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
