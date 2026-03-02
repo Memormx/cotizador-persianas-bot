@@ -1,5 +1,7 @@
 const express = require("express");
 const axios = require("axios");
+const csv = require("csv-parser");
+const { Readable } = require("stream");
 
 const app = express();
 app.use(express.json());
@@ -7,35 +9,35 @@ app.use(express.json());
 const VERIFY_TOKEN = "verificacion123";
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-/* =========================
-   ESTADO SIMPLE EN MEMORIA
-========================= */
 let sesiones = {};
 
 /* =========================
-   LEER GOOGLE SHEETS
+   LEER GOOGLE SHEETS CORRECTAMENTE
 ========================= */
 async function obtenerPrecios() {
   try {
     const url = "https://docs.google.com/spreadsheets/d/1PiA-jCNr4hUQJE1jO_FZ-xh0gg_sPSw2-qHCf9_a-h8/export?format=csv";
     const response = await axios.get(url);
-    const filas = response.data.split("\n");
 
-    const datos = [];
+    const resultados = [];
 
-    for (let i = 1; i < filas.length; i++) {
-      const columnas = filas[i].split(",");
-      if (columnas.length >= 4) {
-        datos.push({
-          tipo: columnas[0]?.trim(),
-          modelo: columnas[1]?.trim(),
-          colores: columnas[2]?.trim(),
-          precio_m2: parseFloat(columnas[3])
-        });
-      }
-    }
+    return new Promise((resolve, reject) => {
+      const stream = Readable.from(response.data);
 
-    return datos;
+      stream
+        .pipe(csv())
+        .on("data", (data) => {
+          resultados.push({
+            tipo: data.TIPO?.trim(),
+            modelo: data.MODELO?.trim(),
+            colores: data.COLORES?.trim(),
+            precio_m2: parseFloat(data.PRECIO_M2)
+          });
+        })
+        .on("end", () => resolve(resultados))
+        .on("error", (error) => reject(error));
+    });
+
   } catch (error) {
     console.error("Error leyendo hoja:", error);
     return [];
@@ -90,19 +92,19 @@ app.post("/webhook", async (req, res) => {
             sesiones[senderId] = { paso: "menu" };
           }
 
-          // VOLVER A MENÚ
           if (mensaje === "0") {
             sesiones[senderId] = { paso: "menu" };
             await sendMessage(senderId, menuPrincipal());
             continue;
           }
 
-          // MENÚ PRINCIPAL
           if (sesiones[senderId].paso === "menu") {
 
             if (mensaje === "1") {
               const datos = await obtenerPrecios();
-              const sheer = datos.filter(d => d.tipo.toUpperCase() === "SHEER");
+              const sheer = datos.filter(d =>
+                d.tipo?.toLowerCase() === "sheer"
+              );
 
               if (sheer.length === 0) {
                 await sendMessage(senderId, "No hay modelos SHEER disponibles.");
@@ -118,6 +120,7 @@ app.post("/webhook", async (req, res) => {
               sheer.forEach((m, index) => {
                 respuesta += `${index + 1}️⃣ ${m.modelo}\n`;
               });
+
               respuesta += "\n0️⃣ Volver al menú";
 
               await sendMessage(senderId, respuesta);
@@ -136,7 +139,6 @@ app.post("/webhook", async (req, res) => {
             }
           }
 
-          // SELECCIÓN MODELO SHEER
           else if (sesiones[senderId].paso === "sheer_modelo") {
 
             const index = parseInt(mensaje) - 1;
@@ -153,7 +155,14 @@ app.post("/webhook", async (req, res) => {
 
               await sendMessage(
                 senderId,
-                `Modelo: ${modeloSeleccionado.modelo}\n\nColores disponibles:\n${modeloSeleccionado.colores}\n\n0️⃣ Volver al menú`
+                `Modelo: ${modeloSeleccionado.modelo}
+
+Colores disponibles:
+${modeloSeleccionado.colores}
+
+Precio: $${modeloSeleccionado.precio_m2} por m2
+
+0️⃣ Volver al menú`
               );
 
             } else {
