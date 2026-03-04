@@ -259,4 +259,14 @@ app.get("/terms", (req, res) => {
     <p>El uso del servicio implica aceptación de estas condiciones.</p>
   `);
 });
+app.get("/data-deletion", (req, res) => {
+  res.send(`
+    <h1>Eliminación de Datos de Usuario</h1>
+    <p>Última actualización: 2026</p>
+    <p>Esta aplicación no almacena datos personales de forma permanente.</p>
+    <p>La información ingresada por el usuario se utiliza únicamente para generar cotizaciones durante la conversación activa en Messenger.</p>
+    <p>Si un usuario desea la eliminación de datos relacionados con su interacción, puede enviar un mensaje directo a la página solicitándolo.</p>
+    <p>Al no existir almacenamiento permanente, no se conserva información una vez finalizada la conversación.</p>
+  `);
+});
 app.listen(process.env.PORT || 3000);
