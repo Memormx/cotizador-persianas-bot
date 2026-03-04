@@ -239,5 +239,24 @@ async function enviar(user, texto) {
     console.log("Error:", error.response?.data || error.message);
   }
 }
+app.get("/privacy", (req, res) => {
+  res.send(`
+    <h1>Política de Privacidad</h1>
+    <p>Última actualización: 2026</p>
+    <p>Esta aplicación proporciona cotizaciones automáticas de persianas mediante Messenger.</p>
+    <p>No recopilamos datos sensibles ni financieros.</p>
+    <p>La información se utiliza únicamente para generar cotizaciones.</p>
+    <p>No compartimos información con terceros.</p>
+  `);
+});
 
+app.get("/terms", (req, res) => {
+  res.send(`
+    <h1>Condiciones del Servicio</h1>
+    <p>Este servicio proporciona cotizaciones informativas.</p>
+    <p>Los precios son estimaciones calculadas automáticamente.</p>
+    <p>No procesamos pagos ni datos bancarios.</p>
+    <p>El uso del servicio implica aceptación de estas condiciones.</p>
+  `);
+});
 app.listen(process.env.PORT || 3000);
